@@ -1,0 +1,1 @@
+Avoid Cabal dependency hell by constraining to known good versions.
