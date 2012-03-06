@@ -16,7 +16,7 @@ flag generate
 
 Executable cabal-nirvana
   Main-is:             cabal-nirvana.hs
-  Build-depends:       base
+  Build-depends:       base < 5
                      , HTTP
                      , process
                      , directory
