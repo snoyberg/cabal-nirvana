@@ -1,5 +1,5 @@
 import System.Environment (getArgs)
-import System.Directory (getAppUserDataDirectory)
+import System.Directory (getAppUserDataDirectory, createDirectoryIfMissing)
 import Control.Applicative ((<$>))
 import Data.Maybe (catMaybes)
 import Data.Char (isSpace)
@@ -16,6 +16,7 @@ configFile = do
 nirvanaFile :: IO FilePath
 nirvanaFile = do
     dir <- getAppUserDataDirectory "cabal-nirvana"
+    createDirectoryIfMissing True dir
     return $ dir ++ "/default"
 
 data Package = Package

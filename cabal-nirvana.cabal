@@ -1,5 +1,5 @@
 Name:                cabal-nirvana
-Version:             0.1
+Version:             0.1.0.1
 Synopsis:            Avoid Cabal dependency hell by constraining to known good versions.
 Description:         This tool takes a list of known compatible versions of libraries and forces them to be used, via constraints in your cabal config file. This should bypass a lot of cabal dependency hell, thereby inducing nirvana.
 Homepage:            http://github.com/snoyberg/cabal-nirvana
