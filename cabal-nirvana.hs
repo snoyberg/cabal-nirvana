@@ -3,7 +3,8 @@ import System.Directory (getAppUserDataDirectory, createDirectoryIfMissing)
 import Control.Applicative ((<$>))
 import Data.Maybe (catMaybes)
 import Data.Char (isSpace)
-import Data.List (isPrefixOf, foldl')
+import Data.List (isPrefixOf, foldl', sort)
+import Data.Ord (comparing)
 import System.Exit (exitWith, ExitCode (ExitSuccess), exitFailure)
 import System.Cmd (rawSystem)
 import Network.HTTP (simpleHTTP, getRequest, getResponseBody)
@@ -14,7 +15,8 @@ import qualified Data.Map as Map
 import Control.Monad (unless)
 import Data.Maybe (fromMaybe)
 import qualified Paths_cabal_nirvana
-import Data.Version (showVersion)
+import Data.Version (showVersion, parseVersion)
+import Text.ParserCombinators.ReadP (readP_to_S)
 
 currVersion :: String
 currVersion = showVersion Paths_cabal_nirvana.version
@@ -54,6 +56,7 @@ main = do
         [] -> do
             ec <- rawSystem "cabal" ["update"]
             unless (ec == ExitSuccess) $ exitWith ec
+            checkVersion
             fetch Nothing
             start Nothing
         ["fetch"] -> fetch Nothing
@@ -98,6 +101,43 @@ fetch murl = do
   where
     url = fromMaybe "http://yesodweb.github.com/nirvana" murl
 
+checkVersion :: IO ()
+checkVersion = do
+    ifp <- indexFile
+    entries <- Tar.read <$> L.readFile ifp
+    versions <- go id entries
+    case reverse $ sort versions of
+        [] -> return ()
+        v:_
+            | v == Paths_cabal_nirvana.version -> return ()
+            | v < Paths_cabal_nirvana.version -> do
+                putStrLn "You appear to be running an unreleased version."
+                putStrLn "If not, please install the latest version from Hackage:"
+                putStrLn "    cabal install cabal-nirvana"
+            | otherwise -> do
+                putStrLn "Your version of cabal-nirvana is out-of-date."
+                putStrLn $ "Your version: " ++ showVersion Paths_cabal_nirvana.version
+                putStrLn $ "Latest version: " ++ showVersion v
+                putStrLn "Please update by running:"
+                putStrLn "    cabal install cabal-nirvana"
+                exitFailure
+  where
+    go front Tar.Done = return $ front []
+    go _ (Tar.Fail e) = throwIO e
+    go front (Tar.Next e es) =
+        go front' es
+      where
+        fp = Tar.entryPath e
+        (p, fp') = break (== '/') fp
+        v = takeWhile (/= '/') $ drop 1 fp'
+
+        front'
+            | p == "cabal-nirvana" =
+                case filter (null . snd) $ readP_to_S parseVersion v of
+                    (v', _):_ -> front . (v':)
+                    [] -> front
+            | otherwise = front
+
 start :: Maybe String -> IO ()
 start mnfp = do
     nfp <- maybe nirvanaFile return mnfp
@@ -112,15 +152,8 @@ start mnfp = do
       where
         go front Tar.Done = return $ front []
         go _ (Tar.Fail e) = throwIO e
-        go front (Tar.Next e es)
-            | p == "cabal-nirvana" && v /= currVersion = do
-                putStrLn "Your version of cabal-nirvana is out-of-date."
-                putStrLn $ "Your version: " ++ currVersion
-                putStrLn $ "Latest version: " ++ v
-                putStrLn "Please update by running:"
-                putStrLn "    cabal install cabal-nirvana"
-                exitFailure
-            | otherwise = go front' es
+        go front (Tar.Next e es) =
+            go front' es
           where
             fp = Tar.entryPath e
             (p, fp') = break (== '/') fp

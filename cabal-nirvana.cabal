@@ -1,5 +1,5 @@
 Name:                cabal-nirvana
-Version:             0.2.1
+Version:             0.2.2
 Synopsis:            Avoid Cabal dependency hell by constraining to known good versions.
 Description:         This tool takes a list of known compatible versions of libraries and forces them to be used. This should bypass a lot of cabal dependency hell, thereby inducing nirvana.
                      .
@@ -34,15 +34,16 @@ Executable cabal-nirvana
                      , directory
                      , tar >= 0.4 && < 0.5
                      , bytestring
+                     , containers
   Other-modules:     Paths_cabal_nirvana
 
 Executable cabal-nirvana-generate
   Main-is:             generate.hs
   if flag(generate)
     Buildable: True
+    Build-depends:       Cabal
+                       , containers
+                       , transformers
+                       , packdeps >= 0.3 && < 0.4
   else
     Buildable: False
-  Build-depends:       Cabal
-                     , containers
-                     , transformers
-                     , packdeps >= 0.3 && < 0.4
