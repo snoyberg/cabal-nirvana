@@ -4,7 +4,7 @@ import Control.Applicative ((<$>))
 import Data.Maybe (catMaybes)
 import Data.Char (isSpace)
 import Data.List (isPrefixOf, foldl')
-import System.Exit (exitWith, ExitCode (ExitSuccess))
+import System.Exit (exitWith, ExitCode (ExitSuccess), exitFailure)
 import System.Cmd (rawSystem)
 import Network.HTTP (simpleHTTP, getRequest, getResponseBody)
 import qualified Data.ByteString.Lazy as L
@@ -13,6 +13,11 @@ import Control.Exception (throwIO)
 import qualified Data.Map as Map
 import Control.Monad (unless)
 import Data.Maybe (fromMaybe)
+import qualified Paths_cabal_nirvana
+import Data.Version (showVersion)
+
+currVersion :: String
+currVersion = showVersion Paths_cabal_nirvana.version
 
 indexFile :: IO FilePath
 indexFile = do
@@ -91,7 +96,7 @@ fetch murl = do
     str <- simpleHTTP (getRequest url) >>= getResponseBody
     nirvanaFile >>= flip writeFile str
   where
-    url = fromMaybe "http://www.snoyman.com/cabal-nirvana/yesod" murl
+    url = fromMaybe "http://yesodweb.github.com/nirvana" murl
 
 start :: Maybe String -> IO ()
 start mnfp = do
@@ -107,16 +112,22 @@ start mnfp = do
       where
         go front Tar.Done = return $ front []
         go _ (Tar.Fail e) = throwIO e
-        go front (Tar.Next e es) =
-            go front' es
+        go front (Tar.Next e es)
+            | p == "cabal-nirvana" && v /= currVersion = do
+                putStrLn "Your version of cabal-nirvana is out-of-date."
+                putStrLn $ "Your version: " ++ currVersion
+                putStrLn $ "Latest version: " ++ v
+                putStrLn "Please update by running:"
+                putStrLn "    cabal install cabal-nirvana"
+                exitFailure
+            | otherwise = go front' es
           where
             fp = Tar.entryPath e
             (p, fp') = break (== '/') fp
             v = takeWhile (/= '/') $ drop 1 fp'
-            front' =
-                if toRemove p v
-                    then front
-                    else front . (e:)
+            front'
+                | toRemove p v = front
+                | otherwise = front . (e:)
 
         toRemove _ "" = False
         toRemove p v =
