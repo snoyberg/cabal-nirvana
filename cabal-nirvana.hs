@@ -4,14 +4,20 @@ import Control.Applicative ((<$>))
 import Data.Maybe (catMaybes)
 import Data.Char (isSpace)
 import Data.List (isPrefixOf, foldl')
-import System.Exit (exitWith)
+import System.Exit (exitWith, ExitCode (ExitSuccess))
 import System.Cmd (rawSystem)
 import Network.HTTP (simpleHTTP, getRequest, getResponseBody)
+import qualified Data.ByteString.Lazy as L
+import qualified Codec.Archive.Tar as Tar
+import Control.Exception (throwIO)
+import qualified Data.Map as Map
+import Control.Monad (unless)
+import Data.Maybe (fromMaybe)
 
-configFile :: IO FilePath
-configFile = do
+indexFile :: IO FilePath
+indexFile = do
     dir <- getAppUserDataDirectory "cabal"
-    return $ dir ++ "/config"
+    return $ dir ++ "/packages/hackage.haskell.org/00-index.tar"
 
 nirvanaFile :: IO FilePath
 nirvanaFile = do
@@ -36,57 +42,26 @@ readPackages fp =
             [a, b] -> return $ Just $ Package a b
             _ -> error $ "Invalid nirvana line: " ++ show s
 
-readConfigFile :: IO [String]
-readConfigFile = do
-    ls <- lines <$> (configFile >>= readFile)
-    -- force evaluation
-    if length ls > 0
-        then return ls
-        else return []
-
-writeConfigFile :: [String] -> IO ()
-writeConfigFile ss = configFile >>= flip writeFile (unlines ss)
-
 main :: IO ()
 main = do
     args <- getArgs
     case args of
-        ("fetch":rest) -> do
-            url <-
-                case rest of
-                    [] -> return "http://www.snoyman.com/cabal-nirvana/yesod"
-                    [x] -> return x
-                    _ -> error $ "Usage: cabal-nirvana fetch [URL]"
-            str <- simpleHTTP (getRequest url) >>= getResponseBody
-            nirvanaFile >>= flip writeFile str
-        ("start":rest) -> do
-            fp <-
-                case rest of
-                    [] -> nirvanaFile
-                    [x] -> return x
-                    _ -> error $ "Usage: cabal-nirvana start [package file]"
-            packages <- readPackages fp
-            config <- readConfigFile
-            writeConfigFile $ addNirvana packages $ removeNirvana config
-        ["stop"] -> do
-            config <- readConfigFile
-            writeConfigFile $ removeNirvana config
-        ("test":rest) -> do
-            fp <-
-                case rest of
-                    [] -> nirvanaFile
-                    [x] -> return x
-                    _ -> error $ "Usage: cabal-nirvana test [package file]"
-            packages <- readPackages fp
-            let ws = map (\(Package n v) -> concat [n, "-", v]) packages
-            putStrLn $ "cabal-dev install " ++ unwords ws
-            ec <- rawSystem "cabal-dev" $ "install" : ws
-            exitWith ec
+        [] -> do
+            ec <- rawSystem "cabal" ["update"]
+            unless (ec == ExitSuccess) $ exitWith ec
+            fetch Nothing
+            start Nothing
+        ["fetch"] -> fetch Nothing
+        ["fetch", url] -> fetch $ Just url
+        ["start"] -> start Nothing
+        ["start", nfp] -> start $ Just nfp
+        ["test"] -> test Nothing
+        ["test", fp] -> test $ Just fp
         _ -> do
             putStrLn "Available commands:"
+            putStrLn "    cabal-nirvana"
             putStrLn "    cabal-nirvana fetch [URL]"
             putStrLn "    cabal-nirvana start [package file]"
-            putStrLn "    cabal-nirvana stop"
             putStrLn "    cabal-nirvana test [package file]"
 
 beginLine, endLine :: String
@@ -110,3 +85,50 @@ addNirvana ps =
         , " == "
         , v
         ]
+
+fetch :: Maybe String -> IO ()
+fetch murl = do
+    str <- simpleHTTP (getRequest url) >>= getResponseBody
+    nirvanaFile >>= flip writeFile str
+  where
+    url = fromMaybe "http://www.snoyman.com/cabal-nirvana/yesod" murl
+
+start :: Maybe String -> IO ()
+start mnfp = do
+    nfp <- maybe nirvanaFile return mnfp
+    packages <- readPackages nfp
+    let packMap = Map.fromList $ map (\(Package n v) -> (n, v)) packages
+    start' packMap
+  where
+    start' packMap = do
+        ifp <- indexFile
+        entries <- Tar.read <$> L.readFile ifp
+        go id entries >>= L.writeFile ifp . Tar.write
+      where
+        go front Tar.Done = return $ front []
+        go _ (Tar.Fail e) = throwIO e
+        go front (Tar.Next e es) =
+            go front' es
+          where
+            fp = Tar.entryPath e
+            (p, fp') = break (== '/') fp
+            v = takeWhile (/= '/') $ drop 1 fp'
+            front' =
+                if toRemove p v
+                    then front
+                    else front . (e:)
+
+        toRemove _ "" = False
+        toRemove p v =
+            case Map.lookup p packMap of
+                Nothing -> False
+                Just v' -> v /= v'
+
+test :: Maybe FilePath -> IO ()
+test mfp = do
+    fp <- maybe nirvanaFile return mfp
+    packages <- readPackages fp
+    let ws = map (\(Package n v) -> concat [n, "-", v]) packages
+    putStrLn $ "cabal-dev install " ++ unwords ws
+    ec <- rawSystem "cabal-dev" $ "install" : ws
+    exitWith ec

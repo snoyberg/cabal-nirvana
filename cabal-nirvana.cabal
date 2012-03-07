@@ -1,7 +1,19 @@
 Name:                cabal-nirvana
-Version:             0.1.0.1
+Version:             0.2
 Synopsis:            Avoid Cabal dependency hell by constraining to known good versions.
-Description:         This tool takes a list of known compatible versions of libraries and forces them to be used, via constraints in your cabal config file. This should bypass a lot of cabal dependency hell, thereby inducing nirvana.
+Description:         This tool takes a list of known compatible versions of libraries and forces them to be used. This should bypass a lot of cabal dependency hell, thereby inducing nirvana.
+                     .
+                     Originally, the idea was to use constraints in the Cabal config file to force this, but unfortunately there's a bug in cabal-install which prevents that from being possible. Instead, this tool now filters the list of available packages available.
+                     .
+                     The simplest usage is to just run cabal-nirvana. This will perform a few steps:
+                     .
+                     1. Perform a cabal update
+                     .
+                     2. Download the most recent version of the blessed package list.
+                     .
+                     3. Modify the list of packages downloaded in the cabal update by the list of blessed packages.
+                     .
+                     If you want to leave Nirvana, just perform a normal cabal update.
 Homepage:            http://github.com/snoyberg/cabal-nirvana
 License:             BSD3
 License-file:        LICENSE
@@ -20,6 +32,8 @@ Executable cabal-nirvana
                      , HTTP
                      , process
                      , directory
+                     , tar >= 0.4 && < 0.5
+                     , bytestring
 
 Executable cabal-nirvana-generate
   Main-is:             generate.hs
